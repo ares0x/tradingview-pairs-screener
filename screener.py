@@ -3,10 +3,13 @@ import schedule
 import json
 
 from notify import sendToTelegram
+from utils import splitPair
 
 # screener 接口
 defaultUrl = "https://scanner.tradingview.com/crypto/scan"
 defaultLanguage = "en"
+defaultOkxSpotTradeUrl = 'https://www.okx.com/cn/trade-spot/tradepair' # btc-usdt
+defaultBinanceSpotTradeUrl = 'https://www.binance.com/zh-CN/trade/tradepair?theme=light&type=spot' #BTC_USDT
 
 def filterPairs(url=defaultUrl):
     language = 'zh'
@@ -18,7 +21,7 @@ def filterPairs(url=defaultUrl):
     }
 
     params = '''
-    {"filter":[{"left":"exchange","operation":"in_range","right":["BINANCE","BYBIT","COINBASE","OKX"]},{"left":"centralization","operation":"equal","right":"cex"},{"left":"change|1","operation":"egreater","right":0.5},{"left":"change|15","operation":"in_range","right":[0.2,1]},{"left":"active_symbol","operation":"equal","right":true},{"left":"ROC","operation":"egreater","right":0},{"left":"24h_vol_change|5","operation":"egreater","right":50},{"left":"currency","operation":"in_range","right":["USD","USDC","USDT"]}],"options":{"lang":"en"},"filter2":{"operator":"and","operands":[{"operation":{"operator":"or","operands":[{"expression":{"left":"type","operation":"in_range","right":["spot"]}}]}},{"operation":{"operator":"or","operands":[{"expression":{"left":"Recommend.All","operation":"in_range","right":[0.1,0.5]}},{"expression":{"left":"Recommend.All","operation":"in_range","right":[-0.1,0.1]}},{"expression":{"left":"Recommend.All","operation":"in_range","right":[0.5,1]}}]}},{"operation":{"operator":"or","operands":[{"expression":{"left":"Recommend.MA","operation":"in_range","right":[0.1,0.5]}},{"expression":{"left":"Recommend.MA","operation":"in_range","right":[-0.1,0.1]}},{"expression":{"left":"Recommend.MA","operation":"in_range","right":[0.5,1]}}]}},{"operation":{"operator":"or","operands":[{"expression":{"left":"Recommend.Other","operation":"in_range","right":[0.1,0.5]}},{"expression":{"left":"Recommend.Other","operation":"in_range","right":[-0.1,0.1]}},{"expression":{"left":"Recommend.Other","operation":"in_range","right":[0.5,1]}}]}}]},"markets":["crypto"],"symbols":{"query":{"types":[]},"tickers":[]},"columns":["base_currency_logoid","currency_logoid","name","exchange","close","ROC","24h_vol_change|5","change|5","change|15","change|60","Recommend.Other","Recommend.All","description","type","subtype","update_mode","pricescale","minmov","fractional","minmove2"],"sort":{"sortBy":"24h_vol|5","sortOrder":"desc"},"price_conversion":{"to_symbol":false},"range":[0,150]}
+    {"filter":[{"left":"exchange","operation":"in_range","right":["BINANCE","OKX"]},{"left":"centralization","operation":"equal","right":"cex"},{"left":"change|1","operation":"egreater","right":0.5},{"left":"change|15","operation":"in_range","right":[0.2,1]},{"left":"active_symbol","operation":"equal","right":true},{"left":"ROC","operation":"egreater","right":0},{"left":"24h_vol_change|5","operation":"egreater","right":50},{"left":"currency","operation":"in_range","right":["USD","USDC","USDT"]}],"options":{"lang":"en"},"filter2":{"operator":"and","operands":[{"operation":{"operator":"or","operands":[{"expression":{"left":"type","operation":"in_range","right":["spot"]}}]}},{"operation":{"operator":"or","operands":[{"expression":{"left":"Recommend.All","operation":"in_range","right":[0.1,0.5]}},{"expression":{"left":"Recommend.All","operation":"in_range","right":[-0.1,0.1]}},{"expression":{"left":"Recommend.All","operation":"in_range","right":[0.5,1]}}]}},{"operation":{"operator":"or","operands":[{"expression":{"left":"Recommend.MA","operation":"in_range","right":[0.1,0.5]}},{"expression":{"left":"Recommend.MA","operation":"in_range","right":[-0.1,0.1]}},{"expression":{"left":"Recommend.MA","operation":"in_range","right":[0.5,1]}}]}},{"operation":{"operator":"or","operands":[{"expression":{"left":"Recommend.Other","operation":"in_range","right":[0.1,0.5]}},{"expression":{"left":"Recommend.Other","operation":"in_range","right":[-0.1,0.1]}},{"expression":{"left":"Recommend.Other","operation":"in_range","right":[0.5,1]}}]}}]},"markets":["crypto"],"symbols":{"query":{"types":[]},"tickers":[]},"columns":["base_currency_logoid","currency_logoid","name","exchange","close","ROC","24h_vol_change|5","change|5","change|15","change|60","Recommend.Other","Recommend.All","description","type","subtype","update_mode","pricescale","minmov","fractional","minmove2"],"sort":{"sortBy":"24h_vol|5","sortOrder":"desc"},"price_conversion":{"to_symbol":false},"range":[0,150]}
     '''
     response = requests.request("POST", url, headers=headers, data=params)
     load_data = json.loads(response.text)
@@ -27,10 +30,13 @@ def filterPairs(url=defaultUrl):
     parsed_data = []
     for entry in data:
         tmp = entry['d'][11]
+        print(entry['d'][2])
+        pair = str(entry['d'][2])
+        base, quote = splitPair(pair)
         if language == 'en':
             parsed_entry = {
                 'detail':{
-                    'pair': entry['d'][2],
+                    'pair': pair,
                     'exchanges': entry['d'][3],  
                     'price': entry['d'][4],
                     'volume': entry['d'][5],
@@ -38,6 +44,13 @@ def filterPairs(url=defaultUrl):
                     'vol 24h change %': str(entry['d'][6])+'%',
                 }
             }
+            if entry['d'][3] == 'OKX':
+                tmpPair = base+"-"+quote
+                okPair = tmpPair.lower()
+                parsed_entry['url'] = defaultOkxSpotTradeUrl.replace('tradepair',okPair)
+            else:
+                tmpPair = base+"_"+quote
+                parsed_entry['url'] = defaultBinanceSpotTradeUrl.replace('tradepair',tmpPair)
             if tmp > 0.0 and tmp < 0.5:
                 parsed_entry['technical rating'] = 'buy'
             elif tmp > 0.5:
@@ -46,7 +59,7 @@ def filterPairs(url=defaultUrl):
         else:
             parsed_entry = {
                 'detail':{
-                    '币对': entry['d'][2],
+                    '币对': pair,
                     '交易所': entry['d'][3], 
                     '价格': entry['d'][4],
                     '成交量': str(entry['d'][5])+'k',
@@ -54,20 +67,29 @@ def filterPairs(url=defaultUrl):
                     '24小时成交量变化 %': str(entry['d'][6])+'%',
                 }
             }
+            if entry['d'][3] == 'OKX':
+                tmpPair = base+'-'+quote
+                okPair = tmpPair.lower()
+                parsed_entry['交易链接'] = defaultOkxSpotTradeUrl.replace('tradepair',okPair)
+            else:
+                tmpPair = base+'_'+quote
+                parsed_entry['交易链接'] = defaultBinanceSpotTradeUrl.replace('tradepair',tmpPair)
             if tmp > 0.0 and tmp < 0.5:
                 parsed_entry['技术指标'] = 'buy'
             elif tmp > 0.5:
                 parsed_entry['技术指标'] = 'strong buy'
-
+            
         parsed_data.append(parsed_entry)
-        
-    sendToTelegram(parsed_data)
+    if len(parsed_data) > 0:
+        sendToTelegram(parsed_data)
+
 
 def main():
     # 每秒执行一次
     schedule.every(5).seconds.do(filterPairs)
     while True:
         schedule.run_pending()
+
 
 
 if __name__ == "__main__":
